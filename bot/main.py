@@ -8,7 +8,7 @@ from telebot import types
 import firebase_admin
 from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
-from http.server import BaseHTTPRequestHandler,HTTPServer
+from http.server import BaseHTTPRequestHandler
 
 # Load environment variables
 load_dotenv()
@@ -379,22 +379,4 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
         self.wfile.write('Hello, BOT is running!'.encode('utf-8'))
- 
-# Start the HTTP server
-def run_server():
-    server_address = ('', 8080)  # Listen on all interfaces, port 8080
-    httpd = HTTPServer(server_address, handler)
-    print("Starting HTTP server on port 8080...")
-    httpd.serve_forever()
-
-# Run the bot
-if __name__ == "__main__":
-    # Start the HTTP server in a separate thread
-    import threading
-    server_thread = threading.Thread(target=run_server)
-    server_thread.daemon = True
-    server_thread.start()
-
-    # Start the bot's event loop
-    print("Starting bot...")
-    asyncio.run(bot.polling())
+  
