@@ -45,15 +45,24 @@ def get_dm_message():
     message = message_ref.get()
     if message.exists:
         return message.to_dict()
-    return {"text": DEFAULT_WELCOME_MESSAGE}
-
+    return {
+        "text": DEFAULT_WELCOME_MESSAGE,
+        "button_text": None,
+        "button_url": None
+    }
 # Function to set the DM message in Firebase
-def set_dm_message(new_message, media_file_id=None, media_type=None):
-    message_data = {"text": new_message}
+
+def set_dm_message(new_message, media_file_id=None, media_type=None, button_text=None, button_url=None):
+    message_data = {
+        "text": new_message,
+        "button_text": button_text,
+        "button_url": button_url
+    }
     if media_file_id:
         message_data["media_file_id"] = media_file_id
         message_data["media_type"] = media_type
     db.collection(MESSAGES_COLLECTION).document("welcome_message").set(message_data)
+
 
 # Function to add a user to Firebase
 def add_user(user_id, username, first_name, last_name):
@@ -86,60 +95,66 @@ async def handle_join_request(message: types.ChatJoinRequest):
     first_name = user.first_name
     last_name = user.last_name or ""
 
-    # Add user to Firebase if they are new
     if is_new_user(user_id):
         add_user(user_id, username, first_name, last_name)
 
-    # Get the DM message
     message_data = get_dm_message()
     dm_message = message_data.get("text", DEFAULT_WELCOME_MESSAGE)
     media_file_id = message_data.get("media_file_id")
     media_type = message_data.get("media_type")
+    button_text = message_data.get("button_text")
+    button_url = message_data.get("button_url")
 
     try:
+        # Create markup if button exists
+        markup = None
+        if button_text and button_url:
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton(text=button_text, url=button_url))
+
         if media_file_id:
             if media_type == "photo":
                 await bot.send_photo(
                     chat_id=user_id,
                     photo=media_file_id,
-                    caption=dm_message
+                    caption=dm_message,
+                    reply_markup=markup
                 )
             elif media_type == "video":
                 await bot.send_video(
                     chat_id=user_id,
                     video=media_file_id,
-                    caption=dm_message
+                    caption=dm_message,
+                    reply_markup=markup
                 )
-            elif media_type == "animation":  # Handle GIFs
+            elif media_type == "animation":
                 await bot.send_animation(
                     chat_id=user_id,
                     animation=media_file_id,
-                    caption=dm_message
+                    caption=dm_message,
+                    reply_markup=markup
                 )
         else:
             await bot.send_message(
                 chat_id=user_id,
-                text=dm_message
+                text=dm_message,
+                reply_markup=markup
             )
         logging.info(f"DM sent to {username} (ID: {user_id})")
     except Exception as e:
         logging.error(f"Failed to send DM to {username}: {e}")
 
-    # Approve the join request
     await bot.approve_chat_join_request(message.chat.id, user_id)
-    logging.info(f"Join request approved for {username} (ID: {user_id})")
+
 
 # Command to start setting the welcome message
 @bot.message_handler(commands=['set_welcome'])
 async def start_set_welcome(message: types.Message):
     user_id = message.from_user.id
-
-    # Check if the user is the admin
     if user_id != ADMIN_USER_ID:
         await bot.reply_to(message, "You are not authorized to use this command.")
         return
 
-    # Ask the user to provide the welcome message
     await bot.reply_to(message, "Please provide a new welcome message.")
     user_states[user_id] = {"state": "awaiting_welcome_message"}
 
@@ -147,49 +162,93 @@ async def start_set_welcome(message: types.Message):
 @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get("state") == "awaiting_welcome_message")
 async def handle_welcome_message(message: types.Message):
     user_id = message.from_user.id
-
-    # Store the welcome message text
     welcome_message = message.text
 
-    # Ask the user to provide the media (photo, video, or GIF) or click /empty
+    # Ask for button text
+    await bot.reply_to(message, "Please provide the button text (or send /skip to skip adding a button):")
+    user_states[user_id] = {
+        "state": "awaiting_button_text",
+        "welcome_message": welcome_message
+    }
+
+@bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get("state") == "awaiting_button_text")
+async def handle_button_text(message: types.Message):
+    user_id = message.from_user.id
+    button_text = message.text
+
+    if button_text.lower() == '/skip':
+        # Skip button creation
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Skip Media", callback_data="skip_media_welcome"))
+        await bot.reply_to(message, "Please upload media or click 'Skip Media'.", reply_markup=markup)
+        user_states[user_id] = {
+            "state": "awaiting_welcome_media",
+            "welcome_message": user_states[user_id]["welcome_message"],
+            "button_text": None,
+            "button_url": None
+        }
+    else:
+        # Ask for button URL
+        await bot.reply_to(message, "Please provide the URL for this button:")
+        user_states[user_id] = {
+            "state": "awaiting_button_url",
+            "welcome_message": user_states[user_id]["welcome_message"],
+            "button_text": button_text
+        }
+
+
+@bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get("state") == "awaiting_button_url")
+async def handle_button_url(message: types.Message):
+    user_id = message.from_user.id
+    button_url = message.text
+
+    # Validate URL (simple check)
+    if not button_url.startswith(('http://', 'https://')):
+        await bot.reply_to(message, "Invalid URL. Please provide a valid URL starting with http:// or https://")
+        return
+
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("Skip Media", callback_data="skip_media_welcome"))
-    await bot.reply_to(message, "Please upload a photo, video, or GIF for the welcome message or click 'Skip Media'.", reply_markup=markup)
-    user_states[user_id] = {"state": "awaiting_welcome_media", "welcome_message": welcome_message}
+    await bot.reply_to(message, "Please upload media or click 'Skip Media'.", reply_markup=markup)
+    user_states[user_id] = {
+        "state": "awaiting_welcome_media",
+        "welcome_message": user_states[user_id]["welcome_message"],
+        "button_text": user_states[user_id]["button_text"],
+        "button_url": button_url
+    }
 
-# Handle the user's media upload for set_welcome
 @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get("state") == "awaiting_welcome_media", content_types=['photo', 'video', 'document', 'animation'])
 async def handle_set_welcome_media(message: types.Message):
     user_id = message.from_user.id
-
-    # Get the welcome message from the state
-    welcome_message = user_states[user_id].get("welcome_message")
+    state_data = user_states[user_id]
+    
     media_file_id = None
     media_type = None
 
     if message.photo:
-        media_file_id = message.photo[-1].file_id  # Get the highest resolution photo's file_id
+        media_file_id = message.photo[-1].file_id
         media_type = "photo"
     elif message.video:
         media_file_id = message.video.file_id
         media_type = "video"
-    elif message.document and message.document.mime_type == "video/mp4":  # Handle GIFs
+    elif message.document and message.document.mime_type == "video/mp4":
         media_file_id = message.document.file_id
         media_type = "animation"
-    elif message.animation:  # Handle GIFs sent as animations
+    elif message.animation:
         media_file_id = message.animation.file_id
         media_type = "animation"
     else:
-        # Invalid input
         await bot.reply_to(message, "Invalid input. Please upload a photo, video, or GIF.")
         return
 
-    # Update the DM message in Firebase
-    set_dm_message(welcome_message, media_file_id, media_type)
-    await bot.reply_to(message, "Welcome message updated successfully!")
-    logging.info(f"User {user_id} updated welcome message with media: {media_type}")
-
-    # Clear the user's state
+    set_dm_message(
+        state_data["welcome_message"],
+        media_file_id,
+        media_type,
+        state_data.get("button_text"),
+        state_data.get("button_url")
+    )
+    await bot.reply_to(message, "Welcome message updated successfully with button!")
     user_states.pop(user_id, None)
 
 # Handle the "Skip Media" callback for welcome message
@@ -359,24 +418,56 @@ async def handle_skip_media_broadcast(call: types.CallbackQuery):
 async def start(message: types.Message):
     await bot.reply_to(message, "Hello! I'm your channel manager bot.")
 
-# HTTP handler for Vercel
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        update_dict = json.loads(post_data.decode('utf-8'))
+# # HTTP handler for Vercel
+# class handler(BaseHTTPRequestHandler):
+#     def do_POST(self):
+#         content_length = int(self.headers['Content-Length'])
+#         post_data = self.rfile.read(content_length)
+#         update_dict = json.loads(post_data.decode('utf-8'))
 
-        asyncio.run(self.process_update(update_dict))
+#         asyncio.run(self.process_update(update_dict))
 
-        self.send_response(200)
-        self.end_headers()
+#         self.send_response(200)
+#         self.end_headers()
 
-    async def process_update(self, update_dict):
-        update = types.Update.de_json(update_dict)
-        await bot.process_new_updates([update])
+#     async def process_update(self, update_dict):
+#         update = types.Update.de_json(update_dict)
+#         await bot.process_new_updates([update])
 
+#     def do_GET(self):
+#         self.send_response(200)
+#         self.end_headers()
+#         self.wfile.write('Hello, BOT is running!'.encode('utf-8'))
+
+# ... (keep all your existing imports and code above) ...
+
+class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write('Hello, BOT is running!'.encode('utf-8'))
-  
+        self.wfile.write(b'Hello, world!')
+
+async def run_bot():
+    # Remove any existing webhook
+    await bot.remove_webhook()
+    
+    # Start polling
+    await bot.polling(non_stop=True, skip_pending=True)
+
+if __name__ == '__main__':
+    # Set up logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Create and run the event loop
+    loop = asyncio.get_event_loop()
+    try:
+        logging.info("Starting bot...")
+        loop.run_until_complete(run_bot())
+    except KeyboardInterrupt:
+        logging.info("Stopping bot...")
+    finally:
+        loop.close()
+        logging.info("Bot stopped.")
