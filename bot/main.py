@@ -418,56 +418,55 @@ async def handle_skip_media_broadcast(call: types.CallbackQuery):
 async def start(message: types.Message):
     await bot.reply_to(message, "Hello! I'm your channel manager bot.")
 
-# # HTTP handler for Vercel
-# class handler(BaseHTTPRequestHandler):
-#     def do_POST(self):
-#         content_length = int(self.headers['Content-Length'])
-#         post_data = self.rfile.read(content_length)
-#         update_dict = json.loads(post_data.decode('utf-8'))
+# HTTP handler for Vercel
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        update_dict = json.loads(post_data.decode('utf-8'))
 
-#         asyncio.run(self.process_update(update_dict))
+        asyncio.run(self.process_update(update_dict))
 
-#         self.send_response(200)
-#         self.end_headers()
+        self.send_response(200)
+        self.end_headers()
 
-#     async def process_update(self, update_dict):
-#         update = types.Update.de_json(update_dict)
-#         await bot.process_new_updates([update])
+    async def process_update(self, update_dict):
+        update = types.Update.de_json(update_dict)
+        await bot.process_new_updates([update])
 
-#     def do_GET(self):
-#         self.send_response(200)
-#         self.end_headers()
-#         self.wfile.write('Hello, BOT is running!'.encode('utf-8'))
-
-# ... (keep all your existing imports and code above) ...
-
-class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b'Hello, world!')
+        self.wfile.write('Hello, BOT is running!'.encode('utf-8'))
 
-async def run_bot():
-    # Remove any existing webhook
-    await bot.remove_webhook()
-    
-    # Start polling
-    await bot.polling(non_stop=True, skip_pending=True)
 
-if __name__ == '__main__':
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+# class Handler(BaseHTTPRequestHandler):
+#     def do_GET(self):
+#         self.send_response(200)
+#         self.end_headers()
+#         self.wfile.write(b'Hello, world!')
+
+# async def run_bot():
+#     # Remove any existing webhook
+#     await bot.remove_webhook()
     
-    # Create and run the event loop
-    loop = asyncio.get_event_loop()
-    try:
-        logging.info("Starting bot...")
-        loop.run_until_complete(run_bot())
-    except KeyboardInterrupt:
-        logging.info("Stopping bot...")
-    finally:
-        loop.close()
-        logging.info("Bot stopped.")
+#     # Start polling
+#     await bot.polling(non_stop=True, skip_pending=True)
+
+# if __name__ == '__main__':
+#     # Set up logging
+#     logging.basicConfig(
+#         level=logging.INFO,
+#         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+#     )
+    
+#     # Create and run the event loop
+#     loop = asyncio.get_event_loop()
+#     try:
+#         logging.info("Starting bot...")
+#         loop.run_until_complete(run_bot())
+#     except KeyboardInterrupt:
+#         logging.info("Stopping bot...")
+#     finally:
+#         loop.close()
+#         logging.info("Bot stopped.")
